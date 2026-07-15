@@ -38,7 +38,20 @@ Game Manager helps gaming shop owners manage devices, customers, sessions, sales
 
 ## 📸 Screenshots
 
-(Add your project screenshots here)
+### Login
+![Login](screenshots/login.png)
+
+### Dashboard
+![Dashboard](screenshots/dashboard.png)
+
+### inventory
+![inventory](screenshots/inventory.png)
+
+### history
+![history](screenshots/history.png)
+
+### devices
+![devices](screenshots/devices.png)
 
 ---
 
