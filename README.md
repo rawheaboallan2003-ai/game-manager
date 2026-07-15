@@ -5,7 +5,9 @@ A modern management system for gaming centers.
 Game Manager helps gaming shop owners manage devices, customers, sessions, sales, and inventory from one dashboard.
 
 ---
+## 🌐 Live Demo
 
+https://game-manager-iota-puce.vercel.app
 ## 🚀 Features
 
 ✅ User authentication  
