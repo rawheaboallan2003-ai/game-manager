@@ -393,48 +393,51 @@ export async function addItemsToSession(
   items: SessionItem[]
 ) {
   console.log("[addItemsToSession] Initiating addItemsToSession transaction...", { sessionId, items });
+
+  // بناء جميع الـ refs قبل الدخول للـ transaction
+  const sessionRef = doc(db, "sessions", sessionId);
+  const productRefs = items.map((item) => doc(db, "products", item.productId));
+
   await runTransaction(db, async (tx) => {
-    const sessionRef = doc(db, "sessions", sessionId);
-    const sessionSnap = await tx.get(sessionRef);
+    // ── مرحلة القراءة: جميع القراءات دفعة واحدة بـ Promise.all ──
+    const [sessionSnap, ...productSnaps] = await Promise.all([
+      tx.get(sessionRef),
+      ...productRefs.map((ref) => tx.get(ref)),
+    ]);
+
     if (!sessionSnap.exists()) throw new Error("الجلسة غير موجودة");
     const sessionData = sessionSnap.data() as PlaySession;
     const currentItems = [...(sessionData.items || [])];
 
-    // First do all reads
-    const productsToUpdate = [];
-    for (const newItem of items) {
-      const productRef = doc(db, "products", newItem.productId);
-      const productSnap = await tx.get(productRef);
-      if (!productSnap.exists())
+    // التحقق من المخزون وحساب الكميات الجديدة
+    const productsToUpdate: { ref: ReturnType<typeof doc>; newStock: number; newItem: SessionItem }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const newItem = items[i];
+      const snap = productSnaps[i];
+      if (!snap.exists())
         throw new Error(`المنتج "${newItem.name}" غير موجود`);
-      const productData = productSnap.data() as Product;
+      const productData = snap.data() as Product;
       if (productData.stock < newItem.quantity)
         throw new Error(
           `المخزون غير كافٍ لـ "${newItem.name}". المتوفر: ${productData.stock}`
         );
-      
       productsToUpdate.push({
-        ref: productRef,
+        ref: productRefs[i],
         newStock: productData.stock - newItem.quantity,
-        newItem
+        newItem,
       });
     }
 
-    // Process items addition on session array
-    for (const itemUpdate of productsToUpdate) {
-      const { newItem } = itemUpdate;
-      const idx = currentItems.findIndex(
-        (i) => i.productId === newItem.productId
-      );
-      
+    // تحديث قائمة العناصر في الجلسة
+    for (const { newItem } of productsToUpdate) {
+      const idx = currentItems.findIndex((i) => i.productId === newItem.productId);
       const sanitizedItem = {
         productId: newItem.productId || "",
         name: newItem.name || "",
         quantity: Number(newItem.quantity) || 0,
         price: Number(newItem.price) || 0,
-        imageUrl: newItem.imageUrl || "" // Avoid undefined
+        imageUrl: newItem.imageUrl || "",
       };
-
       if (idx > -1) {
         currentItems[idx].quantity += newItem.quantity;
         currentItems[idx].imageUrl = currentItems[idx].imageUrl || "";
@@ -443,11 +446,10 @@ export async function addItemsToSession(
       }
     }
 
-    // Apply all updates
-    for (const itemUpdate of productsToUpdate) {
-      tx.update(itemUpdate.ref, { stock: itemUpdate.newStock });
+    // ── مرحلة الكتابة: جميع الكتابات بعد انتهاء القراءات ──
+    for (const { ref, newStock } of productsToUpdate) {
+      tx.update(ref, { stock: newStock });
     }
-
     console.log("[addItemsToSession] Updating items list to Firestore:", currentItems);
     tx.update(sessionRef, { items: currentItems });
   });
@@ -486,29 +488,28 @@ export async function switchDevice(
   newDeviceId: string
 ) {
   console.log("[switchDevice] Switching devices in active session...", { sessionId, oldDeviceId, newDeviceId });
-  await runTransaction(db, async (tx) => {
-    const oldDevRef = doc(db, "devices", oldDeviceId);
-    const newDevRef = doc(db, "devices", newDeviceId);
-    const sessionRef = doc(db, "sessions", sessionId);
 
-    const newDevSnap = await tx.get(newDevRef);
+  const oldDevRef = doc(db, "devices", oldDeviceId);
+  const newDevRef = doc(db, "devices", newDeviceId);
+  const sessionRef = doc(db, "sessions", sessionId);
+
+  await runTransaction(db, async (tx) => {
+    // ── مرحلة القراءة: جميع القراءات دفعة واحدة ──
+    const [newDevSnap, sessionSnap] = await Promise.all([
+      tx.get(newDevRef),
+      tx.get(sessionRef),
+    ]);
+
     if (!newDevSnap.exists()) throw new Error("الجهاز المستهدف غير موجود");
     const newDevData = newDevSnap.data() as Device;
     if (newDevData.status !== "available")
       throw new Error("الجهاز المستهدف غير متاح");
-
-    const sessionSnap = await tx.get(sessionRef);
     if (!sessionSnap.exists()) throw new Error("الجلسة غير موجودة");
 
+    // ── مرحلة الكتابة ──
     tx.update(oldDevRef, { status: "available", currentSessionId: null });
-    tx.update(newDevRef, {
-      status: "occupied",
-      currentSessionId: sessionId,
-    });
-    tx.update(sessionRef, {
-      deviceId: newDeviceId,
-      deviceName: newDevData.name || "",
-    });
+    tx.update(newDevRef, { status: "occupied", currentSessionId: sessionId });
+    tx.update(sessionRef, { deviceId: newDeviceId, deviceName: newDevData.name || "" });
   });
 }
 
@@ -532,19 +533,21 @@ export async function checkoutSession(
   }
 ) {
   console.log("[checkoutSession] Starting checkout session transaction...", { storeId, sessionId, data });
-  await runTransaction(db, async (tx) => {
-    const devRef = doc(db, "devices", data.deviceId);
-    const sessionRef = doc(db, "sessions", sessionId);
-    const txRef = doc(collection(db, "transactions"));
 
+  const devRef = doc(db, "devices", data.deviceId);
+  const sessionRef = doc(db, "sessions", sessionId);
+  const txRef = doc(collection(db, "transactions"));
+
+  await runTransaction(db, async (tx) => {
+    // ── مرحلة القراءة: قراءة وثيقة الجلسة فقط ──
     const sessionSnap = await tx.get(sessionRef);
     if (!sessionSnap.exists()) throw new Error("الجلسة غير موجودة");
     const sessionData = sessionSnap.data() as PlaySession;
 
+    // ── مرحلة الكتابة ──
     tx.update(devRef, { status: "available", currentSessionId: null });
     tx.update(sessionRef, { status: "completed", endTime: data.endTime });
 
-    // Defensive Sanitization: Ensure no fields are undefined or invalid
     const receipt: Omit<Transaction, "id"> = {
       storeId: storeId || "",
       type: "session",
@@ -562,16 +565,16 @@ export async function checkoutSession(
       finalAmount: Number(data.finalAmount) || 0,
       paymentMethod: data.paymentMethod || "cash",
       timestamp: Timestamp.now(),
-      items: (sessionData.items || []).map(item => ({
+      items: (sessionData.items || []).map((item) => ({
         productId: item.productId || "",
         name: item.name || "",
         quantity: Number(item.quantity) || 0,
         price: Number(item.price) || 0,
-        imageUrl: item.imageUrl || "" // Prevent undefined
+        imageUrl: item.imageUrl || "",
       })),
     };
 
-    console.log("[checkoutSession] Final transaction receipt layout for Firestore tx.set:", receipt);
+    console.log("[checkoutSession] Final receipt:", receipt);
     tx.set(txRef, receipt);
   });
 }
@@ -725,34 +728,41 @@ export async function deleteExpense(expenseId: string) {
 
 export async function deleteTransactionAndRollback(transactionId: string) {
   console.log("[deleteTransactionAndRollback] Starting transaction deletion & rollback...", { transactionId });
+
+  const txRef = doc(db, "transactions", transactionId);
+
   await runTransaction(db, async (tx) => {
-    const txRef = doc(db, "transactions", transactionId);
+    // ── مرحلة القراءة الأولى: قراءة الفاتورة ──
     const txSnap = await tx.get(txRef);
     if (!txSnap.exists()) throw new Error("الفاتورة غير موجودة");
     const txData = txSnap.data() as Transaction;
 
-    const productsToUpdate = [];
-    if (txData.items && txData.items.length > 0) {
-      for (const item of txData.items) {
-        if (!item.productId) continue; // Ignore manual services that don't correspond to stock products
-        const productRef = doc(db, "products", item.productId);
-        const productSnap = await tx.get(productRef);
-        if (productSnap.exists()) {
-          const productData = productSnap.data() as Product;
-          productsToUpdate.push({
-            ref: productRef,
-            newStock: (productData.stock || 0) + (item.quantity || 0)
-          });
-        }
+    // تحديد المنتجات الحقيقية التي تحتاج rollback (قبل أي كتابة)
+    const realItems = (txData.items || []).filter(
+      (item) => item.productId && item.productId !== "custom" && item.productId !== "pos"
+    );
+
+    // ── مرحلة القراءة الثانية: قراءة جميع المنتجات دفعة واحدة ──
+    const productRefs = realItems.map((item) => doc(db, "products", item.productId));
+    const productSnaps = await Promise.all(productRefs.map((ref) => tx.get(ref)));
+
+    // حساب المخزون الجديد بعد الـ rollback
+    const productsToUpdate: { ref: ReturnType<typeof doc>; newStock: number }[] = [];
+    for (let i = 0; i < realItems.length; i++) {
+      const snap = productSnaps[i];
+      if (snap.exists()) {
+        const productData = snap.data() as Product;
+        productsToUpdate.push({
+          ref: productRefs[i],
+          newStock: (productData.stock || 0) + (realItems[i].quantity || 0),
+        });
       }
     }
 
-    // Apply stock rollback updates
-    for (const update of productsToUpdate) {
-      tx.update(update.ref, { stock: update.newStock });
+    // ── مرحلة الكتابة: جميع الكتابات بعد انتهاء القراءات ──
+    for (const { ref, newStock } of productsToUpdate) {
+      tx.update(ref, { stock: newStock });
     }
-
-    // Delete transaction document
     tx.delete(txRef);
   });
 }
