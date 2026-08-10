@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useGameStore } from "../store/useGameStore";
+import { deleteTransactionAndRollback } from "../services/storeService";
 import {
   Search,
   Filter,
@@ -9,7 +10,8 @@ import {
   ChevronDown,
   ChevronUp,
   Receipt,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Trash2,
 } from "lucide-react";
 
 export default function History() {
@@ -20,6 +22,22 @@ export default function History() {
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "month">("all");
   const [paymentFilter, setPaymentFilter] = useState<"all" | "cash" | "card" | "wallet">("all");
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
+  const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
+
+  const handleDeleteInvoice = async (e: React.MouseEvent, txId: string) => {
+    e.stopPropagation();
+    if (!window.confirm("هل أنت تأكد من حذف هذه الفاتورة؟ سيتم إلغاء الفاتورة وإعادة المنتجات المباعة إلى المخزون تلقائياً.")) {
+      return;
+    }
+    setDeletingTxId(txId);
+    try {
+      await deleteTransactionAndRollback(txId);
+    } catch (err: any) {
+      alert(err.message || "فشل في حذف الفاتورة");
+    } finally {
+      setDeletingTxId(null);
+    }
+  };
 
   // --- FILTER LOGIC ---
   const filteredTransactions = useMemo(() => {
@@ -310,6 +328,18 @@ export default function History() {
                           )}
                         </div>
                       </div>
+                    </div>
+
+                    {/* DELETE INVOICE & ROLLBACK STOCK ACTION */}
+                    <div className="flex justify-end pt-2 border-t border-white/5">
+                      <button
+                        onClick={(e) => handleDeleteInvoice(e, tx.id)}
+                        disabled={deletingTxId === tx.id}
+                        className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-950/50 hover:bg-red-900/70 text-red-300 border border-red-500/30 text-xs font-bold transition-all shadow-md disabled:opacity-50"
+                      >
+                        <Trash2 size={14} />
+                        <span>{deletingTxId === tx.id ? "جاري الحذف واسترجاع المخزون..." : "حذف الفاتورة واسترجاع المخزون"}</span>
+                      </button>
                     </div>
                   </div>
                 )}

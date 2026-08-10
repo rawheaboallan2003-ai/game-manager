@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGameStore } from "../store/useGameStore";
+import { resetStoreData } from "../services/storeService";
 import ReportButton from "../components/ReportButton";
 import {
   DollarSign,
@@ -11,7 +12,9 @@ import {
   TrendingUp,
   Clock,
   Coffee,
-  CheckCircle2
+  CheckCircle2,
+  RotateCcw,
+  X,
 } from "lucide-react";
 
 export default function Dashboard() {
@@ -20,6 +23,27 @@ export default function Dashboard() {
   const products = useGameStore((state) => state.products);
   const activeSessions = useGameStore((state) => state.activeSessions);
   const transactions = useGameStore((state) => state.transactions);
+
+  // --- RESET STORE DATA STATE ---
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetData = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!storeId || confirmText.trim().toUpperCase() !== "RESET") return;
+    setResetting(true);
+    try {
+      await resetStoreData(storeId);
+      setResetModalOpen(false);
+      setConfirmText("");
+      alert("تمت إعادة تعيين جميع بيانات المتجر بنجاح.");
+    } catch (err: any) {
+      alert("فشل في إعادة تعيين البيانات: " + (err.message || "حدث خطأ غير متوقع"));
+    } finally {
+      setResetting(false);
+    }
+  };
 
   // --- STATS CALCULATION ---
   const stats = useMemo(() => {
@@ -84,6 +108,14 @@ export default function Dashboard() {
           <p className="text-gray-400 mt-1 text-sm">Real-time statistics and quick operations for your lounge.</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setResetModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-500/30 rounded-xl text-xs font-bold transition-all shadow-md"
+          >
+            <RotateCcw size={15} />
+            <span>إعادة تعيين البيانات</span>
+          </button>
           <ReportButton />
           <Link
             to={`/store/${storeId}/devices`}
@@ -328,6 +360,75 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* --- RESET DATA MODAL --- */}
+      {resetModalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0" onClick={() => !resetting && setResetModalOpen(false)} aria-hidden="true" />
+          <div className="relative glass-panel w-full max-w-md rounded-2xl border border-red-500/30 shadow-2xl overflow-hidden p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3 text-red-400 font-extrabold text-lg">
+                <AlertTriangle size={24} />
+                <span>إعادة تعيين بيانات المتجر</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResetModalOpen(false)}
+                disabled={resetting}
+                className="text-gray-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-4 bg-red-950/40 border border-red-500/20 rounded-xl text-red-200 text-xs space-y-2 leading-relaxed">
+              <p className="font-bold text-sm text-red-400">⚠️ تحذير هـام جداً!</p>
+              <p>هذا الإجراء سيقوم بتنظيف وتفريغ كامل لـ:</p>
+              <ul className="list-disc list-inside space-y-1 pr-2">
+                <li>كافة الأجهزة والجلسات الحالية</li>
+                <li>المخزون والمنتجات المسجلة</li>
+                <li>سجل الفواتير والمعاملات المالية بالكامل</li>
+                <li>المصاريف المسجلة</li>
+              </ul>
+              <p className="font-bold text-emerald-400 pt-1">✅ لن يتم حذف حسابك الشخصي أو المتجر.</p>
+            </div>
+
+            <form onSubmit={handleResetData} className="space-y-4 pt-2">
+              <div>
+                <label className="block text-xs font-bold text-gray-400 mb-2">
+                  للتأكيد، يرجى كتابة <span className="text-red-400 font-mono font-extrabold">RESET</span> في الخانة أدناه:
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="RESET"
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-[#0b0f19] border border-white/10 rounded-xl text-white font-mono text-center tracking-widest placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-red-500/50 text-sm"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResetModalOpen(false)}
+                  disabled={resetting}
+                  className="flex-1 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold rounded-xl text-sm transition-all"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetting || confirmText.trim().toUpperCase() !== "RESET"}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-red-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {resetting ? "جاري المسح..." : "تأكيد المسح الشامل"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

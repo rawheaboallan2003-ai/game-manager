@@ -12,7 +12,8 @@ import {
   runTransaction,
   getDocs,
   getDoc,
-  setDoc
+  setDoc,
+  writeBatch
 } from "firebase/firestore";
 import { db, storage } from "./firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -840,5 +841,27 @@ export async function updateDeviceManualTime(deviceId: string, time: string) {
   const manualTimestamp = Timestamp.fromDate(new Date(`1970-01-01T${time}:00Z`));
   return updateDoc(doc(db, "devices", deviceId), { manualTime: manualTimestamp });
 }
+
+// ─────────────────────────────────────────────
+// RESET ALL DATA FOR STORE (PRESERVES ACCOUNT)
+// ─────────────────────────────────────────────
+
+export async function resetStoreData(storeId: string) {
+  console.log("[resetStoreData] Resetting all data for storeId:", storeId);
+  const collectionsToClear = ["devices", "products", "sessions", "transactions", "expenses"];
+
+  for (const colName of collectionsToClear) {
+    const q = query(collection(db, colName), where("storeId", "==", storeId));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      await batch.commit();
+    }
+  }
+}
+
 
 
