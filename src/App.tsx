@@ -9,6 +9,7 @@ import {
   subscribeProducts,
   subscribeSessions,
   subscribeTransactions,
+  subscribeExpenses,
 } from "./services/storeService";
 
 import Layout from "./components/Layout";
@@ -52,6 +53,7 @@ export default function App() {
   const setProducts = useGameStore((state) => state.setProducts);
   const setActiveSessions = useGameStore((state) => state.setActiveSessions);
   const setTransactions = useGameStore((state) => state.setTransactions);
+  const setExpenses = useGameStore((state) => state.setExpenses);
   
   const user = useGameStore((state) => state.user);
   const [initLoading, setInitLoading] = useState(true);
@@ -77,6 +79,8 @@ export default function App() {
               email: authUser.email || "",
               storeId,
               role: userData.role || "staff",
+              displayName: userData.displayName || "",
+              photoURL: userData.photoURL || "",
             });
             setStoreInfo(storeId, storeName);
           } else {
@@ -110,14 +114,16 @@ export default function App() {
     const unsubProducts = subscribeProducts(storeId, setProducts);
     const unsubSessions = subscribeSessions(storeId, setActiveSessions);
     const unsubTransactions = subscribeTransactions(storeId, setTransactions);
+    const unsubExpenses = subscribeExpenses(storeId, setExpenses);
 
     return () => {
       unsubDevices();
       unsubProducts();
       unsubSessions();
       unsubTransactions();
+      unsubExpenses();
     };
-  }, [user, setDevices, setProducts, setActiveSessions, setTransactions]);
+  }, [user, setDevices, setProducts, setActiveSessions, setTransactions, setExpenses]);
 
   if (initLoading) {
     return (

@@ -9,7 +9,10 @@ import {
   onSnapshot,
   limit,
   Timestamp,
-  runTransaction
+  runTransaction,
+  getDocs,
+  getDoc,
+  setDoc
 } from "firebase/firestore";
 import { db, storage } from "./firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -82,10 +85,19 @@ export interface Transaction {
   totalCost: number;
   discount: number;
   finalAmount: number;
-  paymentMethod: "cash" | "card" | "wallet";
+  paymentMethod: "cash" | "card" | "wallet" | "debt";
   timestamp: Timestamp;
   items: SessionItem[];
 }
+
+export interface Expense {
+  id: string;
+  storeId: string;
+  description: string;
+  amount: number;
+  timestamp: Timestamp;
+}
+
 
 // ─────────────────────────────────────────────
 // REAL-TIME SUBSCRIPTIONS
@@ -388,6 +400,8 @@ export async function addItemsToSession(
     const sessionData = sessionSnap.data() as PlaySession;
     const currentItems = [...(sessionData.items || [])];
 
+    // First do all reads
+    const productsToUpdate = [];
     for (const newItem of items) {
       const productRef = doc(db, "products", newItem.productId);
       const productSnap = await tx.get(productRef);
@@ -398,7 +412,17 @@ export async function addItemsToSession(
         throw new Error(
           `المخزون غير كافٍ لـ "${newItem.name}". المتوفر: ${productData.stock}`
         );
+      
+      productsToUpdate.push({
+        ref: productRef,
+        newStock: productData.stock - newItem.quantity,
+        newItem
+      });
+    }
 
+    // Process items addition on session array
+    for (const itemUpdate of productsToUpdate) {
+      const { newItem } = itemUpdate;
       const idx = currentItems.findIndex(
         (i) => i.productId === newItem.productId
       );
@@ -417,8 +441,13 @@ export async function addItemsToSession(
       } else {
         currentItems.push(sanitizedItem);
       }
-      tx.update(productRef, { stock: productData.stock - newItem.quantity });
     }
+
+    // Apply all updates
+    for (const itemUpdate of productsToUpdate) {
+      tx.update(itemUpdate.ref, { stock: itemUpdate.newStock });
+    }
+
     console.log("[addItemsToSession] Updating items list to Firestore:", currentItems);
     tx.update(sessionRef, { items: currentItems });
   });
@@ -557,13 +586,15 @@ export async function createProductInvoice(
     customerName: string;
     items: SessionItem[];
     discount: number;
-    paymentMethod: "cash" | "card" | "wallet";
+    paymentMethod: "cash" | "card" | "wallet" | "debt";
   }
 ) {
   console.log("[createProductInvoice] Creating product invoice transaction...", { storeId, data });
   await runTransaction(db, async (tx) => {
-    // Validate stock and deduct
+    // Validate stock and deduct (reads first)
+    const productsToUpdate = [];
     for (const item of data.items) {
+      if (!item.productId) continue; // Skip custom/manual service items that don't have product ID
       const productRef = doc(db, "products", item.productId);
       const productSnap = await tx.get(productRef);
       if (!productSnap.exists())
@@ -573,7 +604,12 @@ export async function createProductInvoice(
         throw new Error(
           `المخزون غير كافٍ لـ "${item.name}". المتوفر: ${productData.stock}`
         );
-      tx.update(productRef, { stock: productData.stock - item.quantity });
+      productsToUpdate.push({ ref: productRef, newStock: productData.stock - item.quantity });
+    }
+
+    // Apply updates (writes after all reads)
+    for (const update of productsToUpdate) {
+      tx.update(update.ref, { stock: update.newStock });
     }
 
     const itemsCost = data.items.reduce(
@@ -616,3 +652,163 @@ export async function createProductInvoice(
     tx.set(txRef, receipt);
   });
 }
+
+// ─────────────────────────────────────────────
+// EXPENSES
+// ─────────────────────────────────────────────
+
+export async function addExpense(
+  storeId: string,
+  data: { description: string; amount: number }
+) {
+  console.log("[addExpense] Adding expense...", { storeId, data });
+  return addDoc(collection(db, "expenses"), {
+    storeId,
+    description: data.description.trim(),
+    amount: Number(data.amount) || 0,
+    timestamp: Timestamp.now()
+  });
+}
+
+export function subscribeExpenses(
+  storeId: string,
+  callback: (expenses: Expense[]) => void
+) {
+  const q = query(
+    collection(db, "expenses"),
+    where("storeId", "==", storeId)
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: Expense[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() } as Expense));
+      list.sort((a, b) => {
+        const aMs = a.timestamp?.toMillis?.() ?? 0;
+        const bMs = b.timestamp?.toMillis?.() ?? 0;
+        return bMs - aMs;
+      });
+      callback(list);
+    },
+    (err) => console.error("subscribeExpenses error:", err)
+  );
+}
+
+export async function deleteExpense(expenseId: string) {
+  console.log("[deleteExpense] Deleting expense...", { expenseId });
+  return deleteDoc(doc(db, "expenses", expenseId));
+}
+
+// ─────────────────────────────────────────────
+// DELETE TRANSACTION WITH ROLLBACK
+// ─────────────────────────────────────────────
+
+export async function deleteTransactionAndRollback(transactionId: string) {
+  console.log("[deleteTransactionAndRollback] Starting transaction deletion & rollback...", { transactionId });
+  await runTransaction(db, async (tx) => {
+    const txRef = doc(db, "transactions", transactionId);
+    const txSnap = await tx.get(txRef);
+    if (!txSnap.exists()) throw new Error("الفاتورة غير موجودة");
+    const txData = txSnap.data() as Transaction;
+
+    const productsToUpdate = [];
+    if (txData.items && txData.items.length > 0) {
+      for (const item of txData.items) {
+        if (!item.productId) continue; // Ignore manual services that don't correspond to stock products
+        const productRef = doc(db, "products", item.productId);
+        const productSnap = await tx.get(productRef);
+        if (productSnap.exists()) {
+          const productData = productSnap.data() as Product;
+          productsToUpdate.push({
+            ref: productRef,
+            newStock: (productData.stock || 0) + (item.quantity || 0)
+          });
+        }
+      }
+    }
+
+    // Apply stock rollback updates
+    for (const update of productsToUpdate) {
+      tx.update(update.ref, { stock: update.newStock });
+    }
+
+    // Delete transaction document
+    tx.delete(txRef);
+  });
+}
+
+// ─────────────────────────────────────────────
+// REPORT HELPERS – FETCH LAST 24H DATA
+// ─────────────────────────────────────────────
+
+export async function getInvoicesLast24h(storeId: string) {
+  const since = Timestamp.now().toMillis() - 24 * 60 * 60 * 1000;
+  const q = query(
+    collection(db, "transactions"),
+    where("storeId", "==", storeId),
+    where("timestamp", ">=", Timestamp.fromMillis(since)),
+    limit(500)
+  );
+  const snap = await getDocs(q);
+  const list: Transaction[] = [];
+  snap.forEach(d => list.push({ id: d.id, ...d.data() } as Transaction));
+  return list;
+}
+
+export async function getExpensesLast24h(storeId: string) {
+  const since = Timestamp.now().toMillis() - 24 * 60 * 60 * 1000;
+  const q = query(
+    collection(db, "expenses"),
+    where("storeId", "==", storeId),
+    where("timestamp", ">=", Timestamp.fromMillis(since)),
+    limit(500)
+  );
+  const snap = await getDocs(q);
+  const list: Expense[] = [];
+  snap.forEach(d => list.push({ id: d.id, ...d.data() } as Expense));
+  return list;
+}
+
+export async function getDebtsLast24h(storeId: string) {
+  const since = Timestamp.now().toMillis() - 24 * 60 * 60 * 1000;
+  const q = query(
+    collection(db, "transactions"),
+    where("storeId", "==", storeId),
+    where("paymentMethod", "==", "debt"),
+    where("timestamp", ">=", Timestamp.fromMillis(since)),
+    limit(500)
+  );
+  const snap = await getDocs(q);
+  const list: Transaction[] = [];
+  snap.forEach(d => list.push({ id: d.id, ...d.data() } as Transaction));
+  return list;
+}
+
+// ─────────────────────────────────────────────
+// DEVICE ORDERING HELPERS
+// ─────────────────────────────────────────────
+
+export async function getDeviceOrder(storeId: string) {
+  const docRef = doc(db, "settings", `${storeId}_deviceOrder`);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return [];
+  const data = snap.data() as { order: string[] };
+  return data.order || [];
+}
+
+export async function saveDeviceOrder(storeId: string, order: string[]) {
+  const docRef = doc(db, "settings", `${storeId}_deviceOrder`);
+  return setDoc(docRef, { order }, { merge: true });
+}
+
+// ─────────────────────────────────────────────
+// DEVICE MANUAL TIME OVERRIDE
+// ─────────────────────────────────────────────
+
+export async function updateDeviceManualTime(deviceId: string, time: string) {
+  // time format expected HH:MM (24h)
+  const manualTimestamp = Timestamp.fromDate(new Date(`1970-01-01T${time}:00Z`));
+  return updateDoc(doc(db, "devices", deviceId), { manualTime: manualTimestamp });
+}
+
+

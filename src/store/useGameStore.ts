@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Device, PlaySession, Product, Transaction } from "../services/storeService";
+import type { Device, PlaySession, Product, Transaction, Expense } from "../services/storeService";
 
 export interface UserProfile {
   uid: string;
@@ -18,6 +18,7 @@ interface GameStoreState {
   products: Product[];
   activeSessions: PlaySession[];
   transactions: Transaction[];
+  expenses: Expense[];
   loading: boolean;
   error: string | null;
 
@@ -28,6 +29,7 @@ interface GameStoreState {
   setProducts: (products: Product[]) => void;
   setActiveSessions: (sessions: PlaySession[]) => void;
   setTransactions: (transactions: Transaction[]) => void;
+  setExpenses: (expenses: Expense[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearStore: () => void;
@@ -41,6 +43,7 @@ export const useGameStore = create<GameStoreState>((set) => ({
   products: [],
   activeSessions: [],
   transactions: [],
+  expenses: [],
   loading: false,
   error: null,
 
@@ -54,6 +57,7 @@ export const useGameStore = create<GameStoreState>((set) => ({
   setProducts: (products) => set({ products }),
   setActiveSessions: (activeSessions) => set({ activeSessions }),
   setTransactions: (transactions) => set({ transactions }),
+  setExpenses: (expenses) => set({ expenses }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   clearStore: () =>
@@ -65,7 +69,9 @@ export const useGameStore = create<GameStoreState>((set) => ({
       products: [],
       activeSessions: [],
       transactions: [],
+      expenses: [],
       loading: false,
       error: null,
     }),
 }));
+

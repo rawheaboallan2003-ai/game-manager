@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useGameStore } from "../store/useGameStore";
 import { Timestamp } from "firebase/firestore";
@@ -41,6 +41,7 @@ import {
   Clock,
   Wrench,
   Receipt,
+  GripVertical,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -166,13 +167,27 @@ export default function Devices() {
 
   // ── Checkout form ─────────────────────────
   const [discount,       setDiscount]       = useState("0");
-  const [paymentMethod,  setPaymentMethod]  = useState<"cash" | "card" | "wallet">("cash");
+  const [paymentMethod,  setPaymentMethod]  = useState<"cash" | "card" | "wallet" | "debt">("cash");
 
   // ── POS Invoice form ─────────────────────
   const [posCartItems,     setPosCartItems]     = useState<{ productId: string; quantity: number }[]>([]);
   const [posCustomerName,  setPosCustomerName]  = useState("");
   const [posDiscount,      setPosDiscount]      = useState("0");
-  const [posPaymentMethod, setPosPaymentMethod] = useState<"cash" | "card" | "wallet">("cash");
+  const [posPaymentMethod, setPosPaymentMethod] = useState<"cash" | "card" | "wallet" | "debt">("cash");
+
+  // ── POS Custom Service fields ──────────────
+  const [posCustomServiceName, setPosCustomServiceName] = useState("");
+  const [posCustomServiceAmount, setPosCustomServiceAmount] = useState("");
+
+  // ── Device Drag/Reorder State ─────────────
+  const [deviceOrderTrigger, setDeviceOrderTrigger] = useState(0);
+  const [draggedDeviceId, setDraggedDeviceId] = useState<string | null>(null);
+
+  // ── Expenses Modal State ──────────────────
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseError, setExpenseError] = useState<string | null>(null);
 
   // ─────────────────────────────────────────
   // HELPERS
@@ -234,6 +249,8 @@ export default function Devices() {
     setPosCustomerName("");
     setPosDiscount("0");
     setPosPaymentMethod("cash");
+    setPosCustomServiceName("");
+    setPosCustomServiceAmount("");
     setModalError(null);
     setPosInvoiceOpen(true);
   };
@@ -1312,21 +1329,8 @@ export default function Devices() {
                           : "border-white/8 hover:border-white/20 hover:scale-[1.01]"
                       } ${product.stock === 0 ? "opacity-40 cursor-not-allowed" : ""}`}
                     >
-                      {/* Image or icon */}
-                      {product.imageUrl ? (
-                        <img
-                          src={product.imageUrl}
-                          alt={product.name}
-                          className="w-full h-20 object-cover"
-                          draggable={false}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
-                            if (fallback) fallback.style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
-                      <div className={`w-full h-20 bg-gradient-to-br from-gray-800 to-gray-900 items-center justify-center ${product.imageUrl ? 'hidden' : 'flex'}`}>
+                      {/* Image or icon (Disabled) */}
+                      <div className="w-full h-20 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
                         <Coffee size={24} className="text-gray-600" />
                       </div>
 
@@ -1637,20 +1641,8 @@ export default function Devices() {
                           : "border-white/8 hover:border-white/20 hover:scale-[1.01]"
                       } ${product.stock === 0 ? "opacity-40 cursor-not-allowed" : ""}`}
                     >
-                      {product.imageUrl ? (
-                        <img
-                          src={product.imageUrl}
-                          alt={product.name}
-                          className="w-full h-20 object-cover"
-                          draggable={false}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                            const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
-                            if (fallback) fallback.style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
-                      <div className={`w-full h-20 bg-gradient-to-br from-gray-800 to-gray-900 items-center justify-center ${product.imageUrl ? 'hidden' : 'flex'}`}>
+                      {/* Image or icon (Disabled) */}
+                      <div className="w-full h-20 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
                         <Coffee size={24} className="text-gray-600" />
                       </div>
                       <div className="p-2 bg-[#0f1420]">

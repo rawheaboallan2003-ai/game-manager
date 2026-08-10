@@ -315,23 +315,10 @@ export default function Inventory() {
                   isLowStock ? "border-amber-500/20 bg-[#16110a]/50" : "border-white/5 hover:border-white/10"
                 }`}
               >
-                {/* Product Image */}
-                {product.imageUrl ? (
-                  <img
-                    src={product.imageUrl}
-                    alt={product.name}
-                    className="w-full h-36 object-cover"
-                    draggable={false}
-                    onError={(e) => {
-                      console.warn("[Product Image Load Error] Fallback triggered for:", product.name);
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  <div className="w-full h-36 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex items-center justify-center">
-                    <Coffee size={36} className="text-gray-700" />
-                  </div>
-                )}
+                {/* Product Image (Disabled) */}
+                <div className="w-full h-36 bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex items-center justify-center">
+                  <Coffee size={36} className="text-gray-700" />
+                </div>
 
                 <div className="p-5">
                   <div className="flex items-start justify-between">
@@ -451,49 +438,6 @@ export default function Inventory() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              {/* Product Image Upload */}
-              <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">صورة المنتج</label>
-                <div className="flex items-center gap-4">
-                  {/* Preview */}
-                  <div className="w-20 h-20 rounded-xl border-2 border-dashed border-white/10 overflow-hidden flex items-center justify-center bg-[#0b0f19] flex-shrink-0">
-                    {imagePreview ? (
-                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                    ) : existingImageUrl ? (
-                      <img src={existingImageUrl} alt="Current" className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon size={24} className="text-gray-600" />
-                    )}
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold text-gray-300 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Upload size={13} />
-                      {imagePreview || existingImageUrl ? "تغيير الصورة" : "رفع صورة"}
-                    </button>
-                    {(imagePreview || existingImageUrl) && (
-                      <button
-                        type="button"
-                        onClick={() => { clearImage(); setExistingImageUrl(null); }}
-                        className="w-full px-4 py-1.5 text-[10px] text-red-400 hover:text-red-300 transition-all"
-                      >
-                        إزالة الصورة
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
               <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">اسم المنتج</label>
                 <input
