@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { signOut } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { useGameStore } from "../store/useGameStore";
+import AddExpenseModal from "./AddExpenseModal";
 import {
   LayoutDashboard,
   Gamepad2,
@@ -15,7 +16,9 @@ import {
   Activity,
   GripVertical,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Receipt,
+  Plus,
 } from "lucide-react";
 
 interface LayoutProps {
@@ -24,6 +27,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const { storeId } = useParams<{ storeId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
@@ -35,7 +39,9 @@ export default function Layout({ children }: LayoutProps) {
   // --- REORDERING STATE ---
   const [orderedKeys, setOrderedKeys] = useState<string[]>(() => {
     const saved = localStorage.getItem("sidebar_order");
-    return saved ? JSON.parse(saved) : ["dashboard", "devices", "inventory", "history"];
+    const parsed = saved ? JSON.parse(saved) : ["dashboard", "devices", "inventory", "history", "expenses"];
+    if (!parsed.includes("expenses")) parsed.push("expenses");
+    return parsed;
   });
 
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
@@ -111,6 +117,11 @@ export default function Layout({ children }: LayoutProps) {
       name: "سجل الفواتير",
       path: `/store/${storeId}/history`,
       icon: History,
+    },
+    expenses: {
+      name: "المصاريف والنفقات",
+      path: `/store/${storeId}/expenses`,
+      icon: Receipt,
     },
   };
 
@@ -249,8 +260,17 @@ export default function Layout({ children }: LayoutProps) {
         </nav>
 
         {/* PROFILE & LOGOUT SECTION */}
-        <div className="p-4 border-t border-white/5 bg-[#05080e]">
-          <div className="flex items-center gap-3 px-2 py-2 mb-4 rounded-xl bg-white/5">
+        <div className="p-4 border-t border-white/5 bg-[#05080e] space-y-3">
+          <button
+            type="button"
+            onClick={() => setExpenseModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all font-bold text-xs shadow-sm"
+          >
+            <Plus size={15} />
+            <span>+ إضافة مصروف جديد</span>
+          </button>
+
+          <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-white/5">
             <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center text-gray-400 border border-white/5">
               <User size={18} />
             </div>
@@ -266,9 +286,9 @@ export default function Layout({ children }: LayoutProps) {
 
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all font-semibold text-sm"
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all font-semibold text-xs"
           >
-            <LogOut size={18} />
+            <LogOut size={16} />
             <span>Sign Out</span>
           </button>
         </div>
@@ -288,6 +308,9 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </div>
       </main>
+
+      {/* GLOBAL ADD EXPENSE MODAL */}
+      <AddExpenseModal isOpen={expenseModalOpen} onClose={() => setExpenseModalOpen(false)} />
     </div>
   );
 }

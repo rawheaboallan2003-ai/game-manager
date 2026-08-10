@@ -18,6 +18,7 @@ import Dashboard from "./pages/Dashboard";
 import Devices from "./pages/Devices";
 import Inventory from "./pages/Inventory";
 import History from "./pages/History";
+import Expenses from "./pages/Expenses";
 
 // --- AUTH PROTECTED WRAPPER ---
 function ProtectedRoutes() {
@@ -155,6 +156,7 @@ export default function App() {
           <Route path="devices" element={<Devices />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="history" element={<History />} />
+          <Route path="expenses" element={<Expenses />} />
           
           {/* FALLBACK REDIRECTS */}
           <Route path="" element={<Navigate to="dashboard" replace />} />
