@@ -151,6 +151,7 @@ export default function Devices() {
   const [editDeviceType,  setEditDeviceType]  = useState<DeviceType>("ps5");
   const [editRateSingle,  setEditRateSingle]  = useState("5");
   const [editRateMulti,   setEditRateMulti]   = useState("8");
+  const [editManualTime,  setEditManualTime]  = useState(""); // HH:MM format
 
   // ── Start Session form ───────────────────
   const [customerName,   setCustomerName]   = useState("");
@@ -178,16 +179,6 @@ export default function Devices() {
   // ── POS Custom Service fields ──────────────
   const [posCustomServiceName, setPosCustomServiceName] = useState("");
   const [posCustomServiceAmount, setPosCustomServiceAmount] = useState("");
-
-  // ── Device Drag/Reorder State ─────────────
-  const [deviceOrderTrigger, setDeviceOrderTrigger] = useState(0);
-  const [draggedDeviceId, setDraggedDeviceId] = useState<string | null>(null);
-
-  // ── Expenses Modal State ──────────────────
-  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
-  const [expenseDescription, setExpenseDescription] = useState("");
-  const [expenseAmount, setExpenseAmount] = useState("");
-  const [expenseError, setExpenseError] = useState<string | null>(null);
 
   // ─────────────────────────────────────────
   // HELPERS
@@ -287,12 +278,17 @@ export default function Devices() {
     setSubmitting(true);
     setModalError(null);
     try {
-      await updateDevice(selectedDevice.id, {
+      const updates: Record<string, any> = {
         name: editDeviceName.trim() || selectedDevice.name,
         type: editDeviceType,
         rateSingle: parseFloat(editRateSingle) || 0,
         rateMulti: parseFloat(editRateMulti) || 0,
-      });
+      };
+      // حفظ الوقت اليدوي إذا تم تحديده
+      if (editManualTime.trim()) {
+        updates.manualTime = editManualTime.trim();
+      }
+      await updateDevice(selectedDevice.id, updates);
       setEditMode(false);
       setDeviceConfigOpen(false);
     } catch (err: any) {
@@ -367,7 +363,7 @@ export default function Devices() {
           name: product.name,
           quantity: ci.quantity,
           price: product.price,
-          imageUrl: product.imageUrl,
+          imageUrl: product.imageUrl || "",
         };
       });
       await addItemsToSession(selectedSession.id, sessionItems);
@@ -456,7 +452,11 @@ export default function Devices() {
     e.preventDefault();
     if (!storeId) return;
     const itemsToAdd = posCartItems.filter((ci) => ci.quantity > 0);
-    if (itemsToAdd.length === 0) { setModalError("يرجى إضافة منتج واحد على الأقل"); return; }
+    const hasCustomService = posCustomServiceName.trim() !== "" && parseFloat(posCustomServiceAmount) > 0;
+    if (itemsToAdd.length === 0 && !hasCustomService) {
+      setModalError("يرجى إضافة منتج أو خدمة مخصصة");
+      return;
+    }
     setSubmitting(true);
     setModalError(null);
     try {
@@ -467,9 +467,19 @@ export default function Devices() {
           name: product.name,
           quantity: ci.quantity,
           price: product.price,
-          imageUrl: product.imageUrl,
+          imageUrl: product.imageUrl || "",
         };
       });
+      // إضافة الخدمة المخصصة كعنصر إضافي
+      if (hasCustomService) {
+        invoiceItems.push({
+          productId: "custom",
+          name: posCustomServiceName.trim(),
+          quantity: 1,
+          price: parseFloat(posCustomServiceAmount),
+          imageUrl: "",
+        });
+      }
       await createProductInvoice(storeId, {
         customerName: posCustomerName.trim() || "زبون",
         items: invoiceItems,
@@ -586,8 +596,10 @@ export default function Devices() {
       const p = products.find((pr) => pr.id === ci.productId);
       return s + (p?.price ?? 0) * ci.quantity;
     }, 0);
+    const customServiceCost = parseFloat(posCustomServiceAmount) || 0;
     const disc = parseFloat(posDiscount) || 0;
-    return { itemsCost, final: Math.max(0, itemsCost - disc) };
+    const subtotal = itemsCost + customServiceCost;
+    return { itemsCost, customServiceCost, final: Math.max(0, subtotal - disc) };
   })();
 
   // ─────────────────────────────────────────
@@ -1111,6 +1123,21 @@ export default function Devices() {
                       className={inputCls}
                     />
                   </div>
+                </div>
+
+                {/* Manual Time Override */}
+                <div className="p-4 rounded-xl bg-amber-950/25 border border-amber-500/20 space-y-2">
+                  <p className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock size={12} /> تعديل الوقت يدوياً (اختياري)
+                  </p>
+                  <input
+                    type="time"
+                    value={editManualTime}
+                    onChange={(e) => setEditManualTime(e.target.value)}
+                    className={inputCls}
+                    placeholder="HH:MM"
+                  />
+                  <p className="text-[10px] text-gray-500">حدد الوقت يدوياً لتجاوز الوقت الافتراضي للجهاز</p>
                 </div>
 
                 {modalError && <ErrorBanner message={modalError} />}
@@ -1691,6 +1718,42 @@ export default function Devices() {
             )}
 
             {/* Discount */}
+            {/* --- Custom Service Fields --- */}
+            <div className="p-4 rounded-xl bg-indigo-950/30 border border-indigo-500/20 space-y-3">
+              <p className="text-xs font-bold text-indigo-300 uppercase tracking-wider">خدمة مخصصة (اختياري)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>اسم الخدمة</label>
+                  <input
+                    type="text"
+                    value={posCustomServiceName}
+                    onChange={(e) => setPosCustomServiceName(e.target.value)}
+                    placeholder="مثال: توصيلة..."
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>المبلغ (₪)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={posCustomServiceAmount}
+                    onChange={(e) => setPosCustomServiceAmount(e.target.value)}
+                    placeholder="0.00"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+              {posCustomServiceName.trim() && parseFloat(posCustomServiceAmount) > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-indigo-300">✓ {posCustomServiceName.trim()}</span>
+                  <span className="text-white font-bold">₪{parseFloat(posCustomServiceAmount).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Discount */}
             <div>
               <label className={labelCls}>خصم (₪)</label>
               <input
@@ -1741,7 +1804,7 @@ export default function Devices() {
               </button>
               <button
                 type="submit"
-                disabled={submitting || posCartItems.length === 0}
+                disabled={submitting || (posCartItems.length === 0 && !(posCustomServiceName.trim() && parseFloat(posCustomServiceAmount) > 0))}
                 className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-bold rounded-xl text-sm transition-all disabled:opacity-40 shadow-lg shadow-emerald-900/30"
               >
                 {submitting ? "جاري المعالجة..." : `✓ إتمام الدفع — ₪${posTotal.final.toFixed(2)}`}
