@@ -528,7 +528,7 @@ export async function checkoutSession(
     totalCost: number;
     discount: number;
     finalAmount: number;
-    paymentMethod: "cash" | "card" | "wallet";
+    paymentMethod: "cash" | "card" | "wallet" | "debt";
   }
 ) {
   console.log("[checkoutSession] Starting checkout session transaction...", { storeId, sessionId, data });
@@ -590,29 +590,50 @@ export async function createProductInvoice(
   }
 ) {
   console.log("[createProductInvoice] Creating product invoice transaction...", { storeId, data });
+
+  // ── فصل المنتجات الحقيقية عن الخدمات المخصصة قبل الـ transaction ──
+  // هذا يضمن أن جميع القراءات تتم قبل أي كتابة داخل الـ transaction
+  const realItems = data.items.filter(
+    (item) => item.productId && item.productId !== "custom"
+  );
+  const customItems = data.items.filter(
+    (item) => !item.productId || item.productId === "custom"
+  );
+
   await runTransaction(db, async (tx) => {
-    // Validate stock and deduct (reads first)
-    const productsToUpdate = [];
-    for (const item of data.items) {
-      if (!item.productId) continue; // Skip custom/manual service items that don't have product ID
-      const productRef = doc(db, "products", item.productId);
-      const productSnap = await tx.get(productRef);
-      if (!productSnap.exists())
+    // ── مرحلة القراءة: جميع القراءات أولاً بدون أي كتابة ──
+    const productRefs = realItems.map((item) =>
+      doc(db, "products", item.productId)
+    );
+    const productSnaps = await Promise.all(
+      productRefs.map((ref) => tx.get(ref))
+    );
+
+    // التحقق من المخزون وحساب الكميات الجديدة
+    const productsToUpdate: { ref: ReturnType<typeof doc>; newStock: number }[] = [];
+    for (let i = 0; i < realItems.length; i++) {
+      const item = realItems[i];
+      const snap = productSnaps[i];
+      if (!snap.exists())
         throw new Error(`المنتج "${item.name}" غير موجود`);
-      const productData = productSnap.data() as Product;
+      const productData = snap.data() as Product;
       if (productData.stock < item.quantity)
         throw new Error(
           `المخزون غير كافٍ لـ "${item.name}". المتوفر: ${productData.stock}`
         );
-      productsToUpdate.push({ ref: productRef, newStock: productData.stock - item.quantity });
+      productsToUpdate.push({
+        ref: productRefs[i],
+        newStock: productData.stock - item.quantity,
+      });
     }
 
-    // Apply updates (writes after all reads)
+    // ── مرحلة الكتابة: جميع الكتابات بعد انتهاء القراءات ──
     for (const update of productsToUpdate) {
       tx.update(update.ref, { stock: update.newStock });
     }
 
-    const itemsCost = data.items.reduce(
+    const allItems = [...realItems, ...customItems];
+    const itemsCost = allItems.reduce(
       (sum, i) => sum + i.price * i.quantity,
       0
     );
@@ -621,8 +642,7 @@ export async function createProductInvoice(
     const now = Timestamp.now();
 
     const txRef = doc(collection(db, "transactions"));
-    
-    // Defensive Sanitization: Ensure no fields are undefined or invalid
+
     const receipt: Omit<Transaction, "id"> = {
       storeId: storeId || "",
       type: "pos",
@@ -639,16 +659,16 @@ export async function createProductInvoice(
       finalAmount: Number(finalAmount) || 0,
       paymentMethod: data.paymentMethod || "cash",
       timestamp: now,
-      items: data.items.map(item => ({
+      items: allItems.map((item) => ({
         productId: item.productId || "",
         name: item.name || "",
         quantity: Number(item.quantity) || 0,
         price: Number(item.price) || 0,
-        imageUrl: item.imageUrl || "" // Prevent undefined
+        imageUrl: item.imageUrl || "",
       })),
     };
 
-    console.log("[createProductInvoice] Final POS transaction receipt layout for Firestore tx.set:", receipt);
+    console.log("[createProductInvoice] Final POS transaction receipt:", receipt);
     tx.set(txRef, receipt);
   });
 }
