@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { useGameStore } from "../store/useGameStore";
 import {
   addProduct,
@@ -17,10 +17,9 @@ import {
   TrendingUp,
   Package,
   Coffee,
-  CheckCircle,
-  Upload,
-  Image as ImageIcon
+  CheckCircle
 } from "lucide-react";
+
 
 export default function Inventory() {
   console.log("[Inventory Component] Rendering or state update triggered...");
@@ -47,9 +46,8 @@ export default function Inventory() {
 
   // Image upload
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
 
   // --- SEARCH/FILTER ---
   const filteredProducts = useMemo(() => {
@@ -73,31 +71,7 @@ export default function Inventory() {
     };
   }, [products]);
 
-  // --- IMAGE HANDLING ---
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) {
-      console.log("[handleImageSelect] No file selected.");
-      return;
-    }
-    console.log("[handleImageSelect] File chosen:", file.name, "size:", file.size);
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      console.log("[handleImageSelect] FileReader completed. Preview set.");
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
 
-  const clearImage = () => {
-    console.log("[clearImage] Clearing image from state...");
-    setImageFile(null);
-    setImagePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  // --- ACTIONS ---
   const handleOpenCreateModal = () => {
     console.log("[handleOpenCreateModal] Opening product creation modal...");
     setSelectedProduct(null);
@@ -107,7 +81,6 @@ export default function Inventory() {
     setStock("");
     setMinStock("2");
     setImageFile(null);
-    setImagePreview(null);
     setExistingImageUrl(null);
     setProductModalOpen(true);
   };
@@ -121,7 +94,6 @@ export default function Inventory() {
     setStock(product.stock.toString());
     setMinStock(product.minStock.toString());
     setImageFile(null);
-    setImagePreview(null);
     setExistingImageUrl(product.imageUrl || null);
     setProductModalOpen(true);
   };

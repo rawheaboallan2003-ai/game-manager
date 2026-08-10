@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGameStore } from "../store/useGameStore";
+import ReportButton from "../components/ReportButton";
 import {
   DollarSign,
   Gamepad2,
@@ -83,6 +84,7 @@ export default function Dashboard() {
           <p className="text-gray-400 mt-1 text-sm">Real-time statistics and quick operations for your lounge.</p>
         </div>
         <div className="flex items-center gap-3">
+          <ReportButton />
           <Link
             to={`/store/${storeId}/devices`}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-blue-500/10"
